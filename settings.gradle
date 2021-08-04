@@ -1,0 +1,4 @@
+rootProject.name = 'authing-sdk-java-spring-boot'
+include 'app'
+include 'sdk-java-spring-boot'
+

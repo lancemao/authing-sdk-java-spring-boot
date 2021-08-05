@@ -18,7 +18,7 @@ public class HelloWorld {
         if (null != userInfo) {
             String email = userInfo.getEmail();
             System.out.println(userInfo);
-            return userInfo.getUid() + " signed in! Email:" + email;
+            return userInfo.getId() + " signed in! Email:" + email;
         } else {
             return "Not signed in";
         }

@@ -9,6 +9,10 @@ public class Authing {
 
     public static final String LAST_VISITED_URL = "last_visited_url";
 
+    public static void setUserPoolId(String userPoolId) {
+        AuthingImpl.setUserPoolId(userPoolId);
+    }
+
     public static void setAppInfo(String appId, String appSecret) {
         AuthingImpl.setAppInfo(appId, appSecret);
     }

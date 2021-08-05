@@ -46,6 +46,7 @@ public class UserInfo implements Serializable {
         }
     }
 
+    private String id;
     private String sub;
     private String birthday;
     private String family_name;
@@ -69,8 +70,12 @@ public class UserInfo implements Serializable {
 
     private String accessToken;
 
-    public String getUid() {
-        return getSub();
+    public String getId() {
+        return id == null ? getSub() : id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
     }
 
     public String getSub() {

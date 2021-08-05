@@ -28,6 +28,7 @@ public class AuthingImpl {
     private static final String PATH_SIGN_IN = "/oidc/auth?client_id=";
     private static final String PATH_GET_AK = "/oidc/token";
     private static final String PATH_ME = "/oidc/me?access_token=";
+    private static final String PATH_USERS_ME = "/api/v2/users/me";
     private static final String PATH_JWKS = "/oidc/.well-known/jwks.json";
 
     private static final String APP_SESSION_ID = "authing_app_session_id";
@@ -36,6 +37,8 @@ public class AuthingImpl {
     private static final int CONNECTION_TIMEOUT = 10000;
 
     private static long sCacheValidDuration = 10 * 60 * 60 * 1000;
+
+    static String sUserPoolId;
 
     static String sAppId;
     static String sAppSecret;
@@ -65,6 +68,10 @@ public class AuthingImpl {
     private static final Timer timer = new Timer();
     static {
         timer.scheduleAtFixedRate(cleanCacheTask, 0, TimeUnit.HOURS.toMillis(1));
+    }
+
+    public static void setUserPoolId(String userPoolId) {
+        sUserPoolId = userPoolId;
     }
 
     public static void setAppInfo(String appId, String appSecret) {
@@ -115,6 +122,18 @@ public class AuthingImpl {
 
         try {
             UserInfo userInfo = verify(request);
+            if (userInfo != null) {
+                return userInfo;
+            }
+
+            String authorization = request.getHeader("Authorization");
+            if (authorization == null) {
+                authorization = request.getHeader("authorization");
+            }
+            if (authorization != null) {
+                userInfo = getUserInfoByToken(authorization);
+            }
+
             if (userInfo == null) {
                 gotoSignIn(request, response, authParams);
             }
@@ -195,12 +214,11 @@ public class AuthingImpl {
                     }
                 } else {
                     userInfo = verify(appSessionID, authInfo.getId_token());
-                    if (userInfo != null) {
-                        Util.createCookie(request, response, APP_SESSION_ID, appSessionID, sSetCookieOnTopDomain);
-                        if (sIncludeIDTokenInCookie) {
-                            Util.createCookie(request, response, APP_ID_TOKEN, authInfo.getId_token(), sSetCookieOnTopDomain);
-                        }
-                    }
+                }
+
+                Util.createCookie(request, response, APP_SESSION_ID, appSessionID, sSetCookieOnTopDomain);
+                if (sIncludeIDTokenInCookie) {
+                    Util.createCookie(request, response, APP_ID_TOKEN, authInfo.getId_token(), sSetCookieOnTopDomain);
                 }
 
                 if (userInfo == null) {
@@ -232,9 +250,13 @@ public class AuthingImpl {
             }
         } else {
             if (sVerifyRemotely) {
-                AuthInfo authInfo = sCache.get(appSessionID);
-                if (authInfo != null) {
-                    return verifyTokenRemotely(authInfo.getAccess_token());
+                if (appSessionID != null) {
+                    AuthInfo authInfo = sCache.get(appSessionID);
+                    if (authInfo != null) {
+                        return verifyTokenRemotely(authInfo.getAccess_token());
+                    } else {
+                        return null;
+                    }
                 } else {
                     return null;
                 }
@@ -292,6 +314,37 @@ public class AuthingImpl {
                     return null;
                 }
                 return userInfo;
+            } else {
+                String res = Util.getStringFromStream(con.getErrorStream());
+                logger.error("verify access token failed. Status code:" + responseCode + " Error:" + res);
+                return null;
+            }
+        } catch (Exception e) {
+            logger.error("verify access token failed:", e);
+        }
+        return null;
+    }
+
+    private static UserInfo getUserInfoByToken(String token) {
+        if (token == null || token.length() == 0 || sUserPoolId == null) {
+            return null;
+        }
+
+        try {
+            URL obj = new URL(sHost + PATH_USERS_ME);
+            HttpsURLConnection con = (HttpsURLConnection) obj.openConnection();
+            con.setRequestProperty("x-authing-userpool-id", sUserPoolId);
+            con.setRequestProperty("Authorization", token);
+            con.setConnectTimeout(CONNECTION_TIMEOUT);
+            int responseCode = con.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) { //success
+                String res = Util.getStringFromStream(con.getInputStream());
+                GetUserByTokenResponse response = JSON.parseObject(res, GetUserByTokenResponse.class);
+                if (response == null) {
+                    logger.error("Get user info failed");
+                    return null;
+                }
+                return response.getData();
             } else {
                 String res = Util.getStringFromStream(con.getErrorStream());
                 logger.error("verify access token failed. Status code:" + responseCode + " Error:" + res);

@@ -3,7 +3,6 @@ package cn.authing.internal;
 import cn.authing.UserInfo;
 import com.auth0.jwt.interfaces.DecodedJWT;
 
-import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.BufferedReader;
@@ -13,6 +12,8 @@ import java.io.InputStreamReader;
 import java.util.Enumeration;
 import java.util.Map;
 import java.util.Random;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Util {
 
@@ -161,7 +162,7 @@ public class Util {
 
     static void createCookie(HttpServletRequest request, HttpServletResponse response, String key, String value, boolean topDomain) {
         String domain = request.getServerName();
-        if (topDomain) {
+        if (topDomain && !isIp(domain)) {
             domain = domain.replaceAll(".*\\.(?=.*\\.)", "");
         }
         response.addHeader("Set-Cookie", key + "=" + value + "; " +
@@ -169,14 +170,32 @@ public class Util {
     }
 
     static void deleteCookie(HttpServletRequest request, HttpServletResponse response, String key, boolean topDomain) {
-        Cookie cookie = new Cookie(key, null);
         String domain = request.getServerName();
-        if (topDomain) {
+        if (topDomain && !isIp(domain)) {
             domain = domain.replaceAll(".*\\.(?=.*\\.)", "");
         }
-        cookie.setDomain(domain);
-        cookie.setPath("/");
-        cookie.setMaxAge(0);
-        response.addCookie(cookie);
+        response.addHeader("Set-Cookie", key + "=deleted" + "; " +
+                "Domain=" + domain + "; Path=/; HttpOnly; Max-Age=-1;");
+    }
+
+    static boolean isIp(String name) {
+        if (name == null || name.length() == 0) {
+            return true;
+        }
+
+        // ip v6
+        if (name.contains(":")) {
+            return true;
+        }
+
+        // ip v4
+        String numRange = "(\\d{1,2}|(0|1)\\" + "d{2}|2[0-4]\\d|25[0-5])" + "\\."
+                + "(\\d{1,2}|(0|1)\\" + "d{2}|2[0-4]\\d|25[0-5])" + "\\."
+                + "(\\d{1,2}|(0|1)\\" + "d{2}|2[0-4]\\d|25[0-5])" + "\\."
+                + "(\\d{1,2}|(0|1)\\" + "d{2}|2[0-4]\\d|25[0-5])";
+
+        Pattern ip_pattern = Pattern.compile(numRange);
+        Matcher match= ip_pattern.matcher(name);
+        return match.matches();
     }
 }

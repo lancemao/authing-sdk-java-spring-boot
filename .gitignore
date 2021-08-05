@@ -27,3 +27,8 @@ gradlew.bat
 app/build
 sdk-java-spring-boot/build
 gradle
+authing/target
+target
+*.iml
+*.idea
+

@@ -63,9 +63,7 @@ OAuth 2.0 协议要求，授权回调地址**必须**提前和授权服务器协
 </dependency>
 ```
 
-确保在 Authing 控制台设置了回调地址，如下图所示：
-
-![avatar](images/setcallback.png)
+确保在 Authing 控制台设置了回调地址
 
 然后在应用启动的时候，调用如下接口进行初始化。
 

@@ -16,9 +16,19 @@ public class StatsUtil {
     private static final Logger logger = LoggerFactory.getLogger(StatsUtil.class);
 
     public static void trace() {
+        if (AuthingImpl.sUseDynamicAppInfo) {
+            for (AppInfo appInfo : AuthingImpl.sDomainAppInfoRegistry.values()) {
+                doTrace(appInfo.getId(), appInfo.getSecret());
+            }
+        } else {
+            doTrace(AuthingImpl.sAppId, AuthingImpl.sAppSecret);
+        }
+    }
+
+    private static void doTrace(String appId, String appSecret) {
         try {
-            URL obj = new URL(URL_SDK + "?appid=" + AuthingImpl.sAppId
-                    + "&appSecret=" + AuthingImpl.sAppSecret
+            URL obj = new URL(URL_SDK + "?appid=" + appId
+                    + "&appSecret=" + appSecret
                     + "&sdk=java-spring-boot&version=" + SDK_VERSION);
             HttpsURLConnection con = (HttpsURLConnection) obj.openConnection();
             con.setConnectTimeout(AUDIT_TIMEOUT);

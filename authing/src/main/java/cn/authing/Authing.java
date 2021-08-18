@@ -4,6 +4,7 @@ import cn.authing.internal.AuthingImpl;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.util.List;
 
 public class Authing {
 
@@ -37,6 +38,18 @@ public class Authing {
         AuthingImpl.setIncludeIDTokenInCookie(idTokenInCookie);
     }
 
+    public static void setUseDynamicAppInfo(boolean useDynamicAppInfo) {
+        AuthingImpl.setUseDynamicAppInfo(useDynamicAppInfo);
+    }
+
+    public static void setRootUserPoolId(String rootUserPoolId) {
+        AuthingImpl.setRootUserPoolId(rootUserPoolId);
+    }
+
+    public static void setRootUserPoolSecret(String rootUserPoolSecret) {
+        AuthingImpl.setRootUserPoolSecret(rootUserPoolSecret);
+    }
+
     // 最常用API。该API会校验request里面的凭证，若凭证无效,该接口会重定向到Authing登录界面
     public static UserInfo getUserInfo(HttpServletRequest request, HttpServletResponse response) {
         return getUserInfo(request, response, new AuthParams());
@@ -57,5 +70,9 @@ public class Authing {
 
     public static void logout(HttpServletRequest request, HttpServletResponse response, String redirect_uri) {
         AuthingImpl.logout(request, response, redirect_uri);
+    }
+
+    public static List<UserPool> getUserPoolListByRoot(HttpServletRequest request, String rootUserPoolId, String rootUserPoolSecret) {
+        return AuthingImpl.getUserPoolListByRoot(request, rootUserPoolId, rootUserPoolSecret);
     }
 }

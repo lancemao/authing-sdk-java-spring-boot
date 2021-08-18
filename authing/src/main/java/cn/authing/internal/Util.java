@@ -30,6 +30,9 @@ public class Util {
     }
 
     public static String getStringFromStream(InputStream inputStream) {
+        if (inputStream == null) {
+            return "";
+        }
         BufferedReader in = null;
         StringBuilder res = new StringBuilder();
         try {

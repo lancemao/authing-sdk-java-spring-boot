@@ -3,7 +3,10 @@ package cn.authing.internal;
 import cn.authing.AuthParams;
 import cn.authing.Authing;
 import cn.authing.UserInfo;
+import cn.authing.UserPool;
+import cn.authing.common.AuthingResult;
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.TypeReference;
 import com.auth0.jwt.exceptions.SignatureVerificationException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import org.slf4j.Logger;
@@ -13,6 +16,7 @@ import javax.net.ssl.HttpsURLConnection;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.io.DataOutputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -30,9 +34,13 @@ public class AuthingImpl {
     private static final String PATH_ME = "/oidc/me?access_token=";
     private static final String PATH_USERS_ME = "/api/v2/users/me";
     private static final String PATH_JWKS = "/oidc/.well-known/jwks.json";
+    private static final String PATH_GET_APP_INFO = "/api/v2/applications/getAppInfo/default";
+    private static final String PATH_GET_USER_POOL_LIST = "/api/v2/userpools/getUserPoolList";
 
     private static final String APP_SESSION_ID = "authing_app_session_id";
     private static final String APP_ID_TOKEN = "authing_id_token";
+
+    private static final String DOMAIN_SUFFIX = ".";
 
     private static final int CONNECTION_TIMEOUT = 10000;
 
@@ -63,9 +71,18 @@ public class AuthingImpl {
 
     static boolean sIncludeIDTokenInCookie = true;
 
+    static boolean sUseDynamicAppInfo = false;
+
+    static String sRootUserPoolId;
+
+    static String sRootUserPoolSecret;
+
+    static final Map<String, AppInfo> sDomainAppInfoRegistry = new ConcurrentHashMap<>();
+
     private static final Map<String, AuthInfo> sCache = new ConcurrentHashMap<>();
     private static final CleanCacheTask cleanCacheTask = new CleanCacheTask();
     private static final Timer timer = new Timer();
+
     static {
         timer.scheduleAtFixedRate(cleanCacheTask, 0, TimeUnit.HOURS.toMillis(1));
     }
@@ -102,9 +119,25 @@ public class AuthingImpl {
         AuthingImpl.sIncludeIDTokenInCookie = idTokenInCookie;
     }
 
+    public static void setUseDynamicAppInfo(boolean useDynamicAppInfo) {
+        sUseDynamicAppInfo = useDynamicAppInfo;
+    }
+
+    public static void setRootUserPoolId(String rootUserPoolId) {
+        sRootUserPoolId = rootUserPoolId;
+    }
+
+    public static void setRootUserPoolSecret(String rootUserPoolSecret) {
+        sRootUserPoolSecret = rootUserPoolSecret;
+    }
+
     public static UserInfo getUserInfo(HttpServletRequest request, HttpServletResponse response, AuthParams authParams) {
-        if (sAppId == null || sAppSecret == null) {
-            logger.error("app info not set. Please call Authing.setAppInfo(appId, appSecret) during app startup");
+
+        if (getAppId(request) == null || getAppSecret(request) == null) {
+            logger.error("app info not set. Please call Authing.setAppInfo(appId, appSecret) during app startup " +
+                    "when useDynamicAppInfo is false. Please call Authing.setRootUserPoolId(String rootUserPoolId) " +
+                    "and Authing.setRootUserPoolSecret(String rootUserPoolSecret) during app startup " +
+                    "when useDynamicAppInfo is true");
             return null;
         }
 
@@ -114,7 +147,7 @@ public class AuthingImpl {
             return null;
         }
 
-        if (sCallbackUrl == null) {
+        if (getCallbackUrl(request) == null) {
             logger.error("callback url not set. Please call Authing.setCallback(callbackUrl) during app startup. " +
                     "as per OAuth 2.0 specification, callback has to be negotiated during registration");
             return null;
@@ -155,9 +188,9 @@ public class AuthingImpl {
 
         String callbackUrl = authParams.getCallbackUrl();
         if (callbackUrl == null) {
-            callbackUrl = sCallbackUrl;
+            callbackUrl = getCallbackUrl(request);
         }
-        String url = sHost + PATH_SIGN_IN + sAppId +
+        String url = sHost + PATH_SIGN_IN + getAppId(request) +
                 "&scope=" + authParams.getScope() +
                 "&state=" + Util.randomString(12) +
                 "&nonce=" + Util.randomString(12) +
@@ -184,10 +217,10 @@ public class AuthingImpl {
             OutputStream os = con.getOutputStream();
             String callbackUrl = authParams.getCallbackUrl();
             if (callbackUrl == null) {
-                callbackUrl = sCallbackUrl;
+                callbackUrl = getCallbackUrl(request);
             }
-            String body = "client_id=" + sAppId
-                    + "&client_secret=" + sAppSecret
+            String body = "client_id=" + getAppId(request)
+                    + "&client_secret=" + getAppSecret(request)
                     + "&grant_type=" + authParams.getGrantType()
                     + "&code=" + code
                     + "&redirect_uri=" + callbackUrl;
@@ -199,7 +232,7 @@ public class AuthingImpl {
             if (responseCode == HttpURLConnection.HTTP_OK) { //success
                 String res = Util.getStringFromStream(con.getInputStream());
                 AuthInfo authInfo = JSON.parseObject(res, AuthInfo.class);
-                if (authInfo == null  || authInfo.getId_token() == null || authInfo.getAccess_token() == null) {
+                if (authInfo == null || authInfo.getId_token() == null || authInfo.getAccess_token() == null) {
                     logger.error("Auth failed. AK or ID Token is empty");
                     return null;
                 }
@@ -213,7 +246,7 @@ public class AuthingImpl {
                         sCache.put(appSessionID, authInfo);
                     }
                 } else {
-                    userInfo = verify(appSessionID, authInfo.getId_token());
+                    userInfo = verify(appSessionID, authInfo.getId_token(), getAppSecret(request));
                 }
 
                 Util.createCookie(request, response, APP_SESSION_ID, appSessionID, sSetCookieOnTopDomain);
@@ -238,6 +271,116 @@ public class AuthingImpl {
         return null;
     }
 
+    private static String getAppId(HttpServletRequest request) {
+        if (sUseDynamicAppInfo) {
+            AppInfo appInfo = getDynamicAppInfoByRequestDomain(request);
+            if (appInfo == null) {
+                return null;
+            }
+            return appInfo.getId();
+        }
+        return sAppId;
+    }
+
+    private static String getAppSecret(HttpServletRequest request) {
+        if (sUseDynamicAppInfo) {
+            AppInfo appInfo = getDynamicAppInfoByRequestDomain(request);
+            if (appInfo == null) {
+                return null;
+            }
+            return appInfo.getSecret();
+        }
+        return sAppSecret;
+    }
+
+    private static String getCallbackUrl(HttpServletRequest request) {
+        if (sUseDynamicAppInfo) {
+            AppInfo appInfo = getDynamicAppInfoByRequestDomain(request);
+            if (appInfo == null) {
+                return null;
+            }
+            if (appInfo.getRedirectUris() ==  null || appInfo.getRedirectUris().size() == 0) {
+                return null;
+            }
+            return appInfo.getRedirectUris().get(0);
+        }
+        return sCallbackUrl;
+    }
+
+    private static String getAuthorization(HttpServletRequest request) {
+        String authorization = request.getHeader("Authorization");
+        if (authorization == null) {
+            authorization = request.getHeader("authorization");
+        }
+        return authorization;
+    }
+
+    private static AppInfo getDynamicAppInfoByRequestDomain(HttpServletRequest request) {
+        if (sRootUserPoolId == null || sRootUserPoolSecret == null) {
+            logger.error("Get dynamic app info fail, rootUserPoolId is null or rootUserPoolSecret is null");
+            return null;
+        }
+        // 截取域名前缀
+        StringBuffer url = request.getRequestURL();
+        String host = url.substring(request.getScheme().length() + 3, (url.length() - request.getRequestURI().length()));
+        String domain;
+        if (host.contains(DOMAIN_SUFFIX)) {
+            domain = host.substring(0, host.indexOf(DOMAIN_SUFFIX));
+        } else {
+            logger.error("Get dynamic app info fail, invalid host named [{}]", host);
+            return null;
+        }
+
+        AppInfo appInfo = sDomainAppInfoRegistry.get(domain);
+        if (appInfo != null) {
+            return appInfo;
+        }
+
+        try {
+            URL obj = new URL(sHost + PATH_GET_APP_INFO);
+            HttpsURLConnection con = (HttpsURLConnection) obj.openConnection();
+            con.setRequestMethod("POST");
+            con.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
+            con.setRequestProperty("Authorization", getAuthorization(request));
+            con.setConnectTimeout(CONNECTION_TIMEOUT);
+            con.setDoOutput(true);
+            DataOutputStream os = new DataOutputStream(con.getOutputStream());
+            Properties params = new Properties();
+            params.put("rootUserPoolId", sRootUserPoolId);
+            params.put("rootUserPoolSecret", sRootUserPoolSecret);
+            params.put("domain", domain);
+            os.write(JSON.toJSONString(params).getBytes());
+            os.flush();
+            os.close();
+
+            int responseCode = con.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK || HttpURLConnection.HTTP_CREATED == responseCode) {
+                String resStr = Util.getStringFromStream(con.getInputStream());
+                AuthingResult<AppInfo> res = JSON.parseObject(resStr, new TypeReference<AuthingResult<AppInfo>>() {
+                });
+                if (AuthingResult.OK == res.getCode()) {
+                    appInfo = res.getData();
+                    if (appInfo == null || appInfo.getId() == null || appInfo.getSecret() == null) {
+                        logger.error("Get app info failed. App id or app secret is empty");
+                        return null;
+                    }
+
+                    sDomainAppInfoRegistry.put(domain, appInfo);
+                    return appInfo;
+                } else {
+                    logger.error("Get app info failed. Authing result code:" + res.getCode()
+                            + ", Authing result message:" + res.getMessage());
+                }
+            } else {
+                String res = Util.getStringFromStream(con.getErrorStream());
+                logger.error("Get app info failed. Status code:" + responseCode + ", Error:" + res);
+            }
+        } catch (Exception e) {
+            logger.error("Get app info failed. ", e);
+        }
+        return null;
+    }
+
     private static UserInfo verify(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
         String appSessionID = getAppSessionIDFromCookie(cookies);
@@ -246,7 +389,7 @@ public class AuthingImpl {
             if (sVerifyRemotely) {
                 return verifyTokenRemotely(idToken);
             } else {
-                return verify(appSessionID, idToken);
+                return verify(appSessionID, idToken, getAppSecret(request));
             }
         } else {
             if (sVerifyRemotely) {
@@ -261,12 +404,12 @@ public class AuthingImpl {
                     return null;
                 }
             } else {
-                return verify(appSessionID, null);
+                return verify(appSessionID, null, getAppSecret(request));
             }
         }
     }
 
-    private static UserInfo verify(String key, String idToken) {
+    private static UserInfo verify(String key, String idToken, String appSecret) {
         if (key == null || key.length() == 0) {
             return null;
         }
@@ -283,7 +426,7 @@ public class AuthingImpl {
             }
         } else {
             if (idToken != null && idToken.length() > 0) {
-                UserInfo userInfo = verifyIdToken(idToken);
+                UserInfo userInfo = verifyIdToken(idToken, appSecret);
                 if (userInfo != null) {
                     AuthInfo authInfo = new AuthInfo();
                     authInfo.setUserInfo(userInfo);
@@ -356,9 +499,9 @@ public class AuthingImpl {
         return null;
     }
 
-    private static UserInfo verifyIdToken(String idToken) {
+    private static UserInfo verifyIdToken(String idToken, String appSecret) {
         try {
-            DecodedJWT jwt = verifyToken(idToken);
+            DecodedJWT jwt = verifyToken(idToken, appSecret);
             if (jwt == null) {
                 return null;
             }
@@ -378,12 +521,12 @@ public class AuthingImpl {
         return null;
     }
 
-    private static DecodedJWT verifyToken(String idToken) {
-        DecodedJWT jwt = Jwk.verifyToken(idToken, sJWK, sAppSecret);
+    private static DecodedJWT verifyToken(String idToken, String appSecret) {
+        DecodedJWT jwt = Jwk.verifyToken(idToken, sJWK, appSecret);
         if (jwt == null) {
             // key might be rotated. try again
             sJWK = Jwk.create(sHost + PATH_JWKS);
-            jwt = Jwk.verifyToken(idToken, sJWK, sAppSecret);
+            jwt = Jwk.verifyToken(idToken, sJWK, appSecret);
         }
         return jwt;
     }
@@ -440,6 +583,44 @@ public class AuthingImpl {
             if (APP_ID_TOKEN.equals(cookie.getName())) {
                 return cookie.getValue();
             }
+        }
+        return null;
+    }
+
+    public static List<UserPool> getUserPoolListByRoot(HttpServletRequest request, String rootUserPoolId, String rootUserPoolSecret) {
+        try {
+            URL obj = new URL(sHost + PATH_GET_USER_POOL_LIST);
+            HttpsURLConnection con = (HttpsURLConnection) obj.openConnection();
+            con.setRequestMethod("POST");
+            con.setRequestProperty("Content-Type", "application/json;charset=UTF-8");
+            con.setRequestProperty("Authorization", getAuthorization(request));
+            con.setConnectTimeout(CONNECTION_TIMEOUT);
+            con.setDoOutput(true);
+            DataOutputStream os = new DataOutputStream(con.getOutputStream());
+            Properties params = new Properties();
+            params.put("rootUserPoolId", rootUserPoolId);
+            params.put("rootUserPoolSecret", rootUserPoolSecret);
+            os.write(JSON.toJSONString(params).getBytes());
+            os.flush();
+            os.close();
+
+            int responseCode = con.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK || HttpURLConnection.HTTP_CREATED == responseCode) {
+                String resStr = Util.getStringFromStream(con.getInputStream());
+                AuthingResult<List<UserPool>> res = JSON.parseObject(resStr, new TypeReference<AuthingResult<List<UserPool>>>() {
+                });
+                if (AuthingResult.OK == res.getCode()) {
+                    return res.getData();
+                } else {
+                    logger.error("Get user pool list by root info failed. Authing result code:" + res.getCode()
+                            + ", Authing result message:" + res.getMessage());
+                }
+            } else {
+                String res = Util.getStringFromStream(con.getErrorStream());
+                logger.error("Get app info failed. Status code:" + responseCode + ", Error:" + res);
+            }
+        } catch (Exception e) {
+            logger.error("Get app info failed. ", e);
         }
         return null;
     }

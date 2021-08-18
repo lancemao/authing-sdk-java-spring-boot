@@ -325,7 +325,7 @@ public class AuthingImpl {
         String host = url.substring(request.getScheme().length() + 3, (url.length() - request.getRequestURI().length()));
         String domain;
         if (host.contains(DOMAIN_SUFFIX)) {
-            domain = host.substring(0, host.indexOf(DOMAIN_SUFFIX));
+            domain = host.substring(0, host.indexOf(DOMAIN_SUFFIX)).toLowerCase();
         } else {
             logger.error("Get dynamic app info fail, invalid host named [{}]", host);
             return null;

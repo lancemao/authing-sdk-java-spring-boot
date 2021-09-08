@@ -50,14 +50,21 @@ public class Authing {
         AuthingImpl.setRootUserPoolSecret(rootUserPoolSecret);
     }
 
-    // 最常用API。该API会校验request里面的凭证，若凭证无效,该接口会重定向到Authing登录界面
+    // 最常用 API。该 API 会校验 request 里面的凭证，若凭证无效,该接口会返回 null
     public static UserInfo getUserInfo(HttpServletRequest request, HttpServletResponse response) {
         return getUserInfo(request, response, new AuthParams());
     }
 
-    // 如果gotoLogin为false，服务端不会自动重定向到登录界面。服务端可以返回一个未认证错误，由前台自己处理
     public static UserInfo getUserInfo(HttpServletRequest request, HttpServletResponse response, AuthParams authParams) {
         return AuthingImpl.getUserInfo(request, response, authParams);
+    }
+
+    public static String buildSignInUrl(HttpServletRequest request) {
+        return buildSignInUrl(request, new AuthParams());
+    }
+
+    public static String buildSignInUrl(HttpServletRequest request, AuthParams authParams) {
+        return AuthingImpl.buildSignInUrl(request, authParams);
     }
 
     public static UserInfo onLogin(HttpServletRequest request, HttpServletResponse response) {
@@ -75,4 +82,9 @@ public class Authing {
     public static List<UserPool> getUserPoolListByRoot(HttpServletRequest request, String rootUserPoolId, String rootUserPoolSecret) {
         return AuthingImpl.getUserPoolListByRoot(request, rootUserPoolId, rootUserPoolSecret);
     }
+
+    public static Boolean isUserPoolAdministrator(HttpServletRequest request, String userId) {
+        return AuthingImpl.isUserPoolAdministrator(request, userId);
+    }
+
 }

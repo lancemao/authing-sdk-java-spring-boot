@@ -3,7 +3,7 @@ package cn.authing.common;
 /**
  * AuthingResult
  */
-public class AuthingResult<T> {
+public class AuthingResult<T> extends BasicEntity {
 
     public static final int OK = 200;
 

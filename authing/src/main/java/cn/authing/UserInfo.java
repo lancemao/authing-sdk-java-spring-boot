@@ -67,6 +67,7 @@ public class UserInfo implements Serializable {
     private Address address;
     private String phone_number;
     private boolean phone_number_verified;
+    private String userpool_id;
 
     private String accessToken;
 
@@ -244,6 +245,14 @@ public class UserInfo implements Serializable {
 
     public void setAccessToken(String accessToken) {
         this.accessToken = accessToken;
+    }
+
+    public String getUserpool_id() {
+        return userpool_id;
+    }
+
+    public void setUserpool_id(String userpool_id) {
+        this.userpool_id = userpool_id;
     }
 
     @Override

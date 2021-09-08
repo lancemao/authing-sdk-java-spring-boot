@@ -1,9 +1,6 @@
 package cn.authing;
 
 public class AuthParams {
-    // if true, SDK will automatically redirect user to login page
-    // if false, application should handle redirection manually
-    private boolean gotoLogin = true;
 
     // you can set custom callback url after login
     // note all callback urls MUST be registered at Authing console
@@ -15,13 +12,6 @@ public class AuthParams {
     // can be either authorization_code or refresh_token
     private String grantType = "authorization_code";
 
-    public boolean isGotoLogin() {
-        return gotoLogin;
-    }
-
-    public void setGotoLogin(boolean gotoLogin) {
-        this.gotoLogin = gotoLogin;
-    }
 
     public String getCallbackUrl() {
         return callbackUrl;

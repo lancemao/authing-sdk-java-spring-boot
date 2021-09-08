@@ -22,7 +22,8 @@ public class HelloWorld {
             System.out.println(userInfo);
             return userInfo.getId() + " signed in! Email:" + email;
         } else {
-            return "Not signed in";
+//            return "Not signed in";
+            return Authing.buildSignInUrl(request);
         }
     }
 
@@ -52,5 +53,12 @@ public class HelloWorld {
     public Object getUserPoolListByRoot(HttpServletRequest request, @RequestParam String rootUserPoolId, @RequestParam String rootUserPoolSecret) {
         List<UserPool> userPoolListByRoot = Authing.getUserPoolListByRoot(request, rootUserPoolId, rootUserPoolSecret);
         return userPoolListByRoot;
+    }
+
+    @ResponseBody
+    @RequestMapping("/isUserPoolAdministrator")
+    public Object isUserPoolAdministrator(HttpServletRequest request,
+                                          @RequestParam String userId) {
+        return Authing.isUserPoolAdministrator(request, userId);
     }
 }

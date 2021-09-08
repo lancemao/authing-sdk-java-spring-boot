@@ -9,6 +9,7 @@ public class UserPool extends BasicEntity {
 
     private String id;
     private String secret;
+    private String ownerId;
 
     public String getId() {
         return id;
@@ -24,5 +25,13 @@ public class UserPool extends BasicEntity {
 
     public void setSecret(String secret) {
         this.secret = secret;
+    }
+
+    public String getOwnerId() {
+        return ownerId;
+    }
+
+    public void setOwnerId(String ownerId) {
+        this.ownerId = ownerId;
     }
 }

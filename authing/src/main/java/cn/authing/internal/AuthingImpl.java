@@ -1,9 +1,6 @@
 package cn.authing.internal;
 
-import cn.authing.AuthParams;
-import cn.authing.Authing;
-import cn.authing.UserInfo;
-import cn.authing.UserPool;
+import cn.authing.*;
 import cn.authing.common.AuthingResult;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.TypeReference;
@@ -18,6 +15,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.DataOutputStream;
 import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -36,6 +34,9 @@ public class AuthingImpl {
     private static final String PATH_JWKS = "/oidc/.well-known/jwks.json";
     private static final String PATH_GET_APP_INFO = "/api/v2/applications/getAppInfo/default";
     private static final String PATH_GET_USER_POOL_LIST = "/api/v2/userpools/getUserPoolList";
+    private static final String PATH_COOPERATORS = "/api/v2/cooperators";
+    private static final String PATH_GRAPH_CALL = "/graphql/v2";
+
 
     private static final String APP_SESSION_ID = "authing_app_session_id";
     private static final String APP_ID_TOKEN = "authing_id_token";
@@ -166,37 +167,11 @@ public class AuthingImpl {
             if (authorization != null) {
                 userInfo = getUserInfoByToken(authorization);
             }
-
-            if (userInfo == null) {
-                gotoSignIn(request, response, authParams);
-            }
             return userInfo;
         } catch (Exception e) {
             logger.error("getUserInfo exception", e);
             return null;
         }
-    }
-
-    private static void gotoSignIn(HttpServletRequest request, HttpServletResponse response, AuthParams authParams) throws Exception {
-        if (authParams == null || !authParams.isGotoLogin()) {
-            return;
-        }
-
-        // save current url to session
-        String cur = Util.getRequestURLWithParas(request);
-        request.getSession(true).setAttribute(Authing.LAST_VISITED_URL, cur);
-
-        String callbackUrl = authParams.getCallbackUrl();
-        if (callbackUrl == null) {
-            callbackUrl = getCallbackUrl(request);
-        }
-        String url = sHost + PATH_SIGN_IN + getAppId(request) +
-                "&scope=" + authParams.getScope() +
-                "&state=" + Util.randomString(12) +
-                "&nonce=" + Util.randomString(12) +
-                "&response_type=" + authParams.getResponseType() +
-                "&redirect_uri=" + URLEncoder.encode(callbackUrl, "utf-8");
-        response.sendRedirect(url);
     }
 
     public static UserInfo onLogin(HttpServletRequest request, HttpServletResponse response, AuthParams authParams) {
@@ -299,7 +274,7 @@ public class AuthingImpl {
             if (appInfo == null) {
                 return null;
             }
-            if (appInfo.getRedirectUris() ==  null || appInfo.getRedirectUris().size() == 0) {
+            if (appInfo.getRedirectUris() == null || appInfo.getRedirectUris().size() == 0) {
                 return null;
             }
             return appInfo.getRedirectUris().get(0);
@@ -600,6 +575,7 @@ public class AuthingImpl {
             Properties params = new Properties();
             params.put("rootUserPoolId", rootUserPoolId);
             params.put("rootUserPoolSecret", rootUserPoolSecret);
+
             os.write(JSON.toJSONString(params).getBytes());
             os.flush();
             os.close();
@@ -623,6 +599,107 @@ public class AuthingImpl {
             logger.error("Get app info failed. ", e);
         }
         return null;
+    }
+
+    public static Boolean isUserPoolAdministrator(HttpServletRequest request, String userId) {
+
+        if (sRootUserPoolId == null || sRootUserPoolSecret == null || userId == null) {
+            logger.error("invalid param (rootUserPoolId | rootUserPoolSecret | userId)");
+            return null;
+        }
+        Set<String> cooperatorIds = new HashSet<>();
+        try {
+            URL obj = new URL(sHost + PATH_COOPERATORS);
+            HttpsURLConnection con = (HttpsURLConnection) obj.openConnection();
+            con.setRequestProperty("x-authing-userpool-id", sRootUserPoolId);
+            con.setRequestProperty("Authorization", getAuthorization(request));
+            con.setConnectTimeout(CONNECTION_TIMEOUT);
+            int responseCode = con.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) { //success
+                String res = Util.getStringFromStream(con.getInputStream());
+                AuthingResult<List<CooperatorInfo>> response = JSON.parseObject(res, new TypeReference<AuthingResult<List<CooperatorInfo>>>() {
+                });
+                if (response == null) {
+                    logger.error("Get cooperators info failed");
+                    return null;
+                }
+                if (response.getData() != null) {
+                    for (CooperatorInfo cooperator : response.getData()) {
+                        cooperatorIds.add(cooperator.getUser().getId());
+                    }
+                }
+            } else {
+                String res = Util.getStringFromStream(con.getErrorStream());
+                logger.error("Get cooperators info failed. Status code:" + responseCode + " Error:" + res);
+                return null;
+            }
+        } catch (Exception e) {
+            logger.error("Get cooperators info failed:", e);
+        }
+
+        try {
+            URL obj = new URL(sHost + PATH_GRAPH_CALL);
+            HttpsURLConnection con = (HttpsURLConnection) obj.openConnection();
+            con.setRequestMethod("POST");
+            con.setRequestProperty("x-authing-userpool-id", sUserPoolId);
+            con.setRequestProperty("Authorization", getAuthorization(request));
+            con.setRequestProperty("Content-Type", "application/json");
+            con.setRequestProperty("x-authing-request-from", "SDK");
+            con.setRequestProperty("x-authing-sdk-version", "1.0.4");
+            con.setRequestProperty("x-authing-app-id", "" + getAppId(request));
+            con.setConnectTimeout(CONNECTION_TIMEOUT);
+            con.setDoInput(true);
+            con.setDoOutput(true);
+
+            DataOutputStream os = new DataOutputStream(con.getOutputStream());
+            byte[] bytes = JSON.parseObject(GraphQuery.USER_POOL_DOCUMENT_JSON).toJSONString().getBytes();
+            os.write(bytes);
+            os.flush();
+            os.close();
+
+            int responseCode = con.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) { //success
+                String res = Util.getStringFromStream(con.getInputStream());
+                AuthingResult<UserPoolDetail> response = JSON.parseObject(res, new TypeReference<AuthingResult<UserPoolDetail>>() {
+                });
+                if (response == null || response.getData() == null || response.getData().getUserPool() == null) {
+                    logger.error("Get user pool info failed, response: {}", response);
+                    return null;
+                }
+                String ownerId = response.getData().getUserPool().getOwnerId();
+                cooperatorIds.add(ownerId);
+            } else {
+                String res = Util.getStringFromStream(con.getErrorStream());
+                logger.error("Get user pool info failed. Status code:" + responseCode + " Error:" + res);
+                return null;
+            }
+        } catch (Exception e) {
+            logger.error("Get user pool info failed:", e);
+        }
+        return cooperatorIds.contains(userId);
+    }
+
+    public static String buildSignInUrl(HttpServletRequest request, AuthParams authParams) {
+        // save current url to session
+        String cur = Util.getRequestURLWithParas(request);
+        request.getSession(true).setAttribute(Authing.LAST_VISITED_URL, cur);
+
+        String callbackUrl = authParams.getCallbackUrl();
+        if (callbackUrl == null) {
+            callbackUrl = getCallbackUrl(request);
+        }
+        String url = null;
+        try {
+            url = sHost + PATH_SIGN_IN + getAppId(request) +
+                    "&scope=" + authParams.getScope() +
+                    "&state=" + Util.randomString(12) +
+                    "&nonce=" + Util.randomString(12) +
+                    "&response_type=" + authParams.getResponseType() +
+                    "&redirect_uri=" + URLEncoder.encode(callbackUrl, "utf-8");
+        } catch (UnsupportedEncodingException e) {
+            throw new RuntimeException("buildSignInUrl error", e);
+        }
+        return url;
     }
 
     private static class CleanCacheTask extends TimerTask {

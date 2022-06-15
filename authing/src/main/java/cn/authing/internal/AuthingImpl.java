@@ -187,8 +187,10 @@ public class AuthingImpl {
         request.getSession(true).setAttribute(Authing.LAST_VISITED_URL, cur);
 
         String callbackUrl = authParams.getCallbackUrl();
+        callbackUrl = callbackUrl == null ? getCallbackUrl(request) : callbackUrl;
+
         if (callbackUrl == null) {
-            callbackUrl = getCallbackUrl(request);
+            return;
         }
         String url = sHost + PATH_SIGN_IN + getAppId(request) +
                 "&scope=" + authParams.getScope() +
@@ -512,7 +514,9 @@ public class AuthingImpl {
 
             sCacheValidDuration = jwt.getExpiresAt().getTime() - Calendar.getInstance().getTimeInMillis();
 
-            return Util.getUserInfo(jwt);
+            UserInfo userInfo = Util.getUserInfo(jwt);
+            userInfo.setIdToken(idToken);
+            return userInfo;
         } catch (SignatureVerificationException e) {
             logger.error("jwt verification failed", e);
         } catch (Exception e) {

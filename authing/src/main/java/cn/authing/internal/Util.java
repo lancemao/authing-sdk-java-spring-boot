@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.regex.Matcher;
@@ -131,6 +132,7 @@ public class Util {
         boolean email_verified = jwt.getClaim("email_verified").asBoolean();
         String phoneNumber = jwt.getClaim("phone_number").asString();
         boolean phone_number_verified = jwt.getClaim("phone_number_verified").asBoolean();
+        List<String> roles = jwt.getClaim("roles").asList(String.class);
         Map<String, Object> addressMap = jwt.getClaim("address").asMap();
         if (addressMap != null) {
             UserInfo.Address address = new UserInfo.Address();
@@ -160,6 +162,7 @@ public class Util {
         userInfo.setEmail_verified(email_verified);
         userInfo.setPhone_number(phoneNumber);
         userInfo.setPhone_number_verified(phone_number_verified);
+        userInfo.setRoles(roles);
         return userInfo;
     }
 

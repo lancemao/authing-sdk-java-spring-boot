@@ -9,7 +9,7 @@ public class AuthParams {
     // note all callback urls MUST be registered at Authing console
     private String callbackUrl;
 
-    private String scope = "openid profile email phone address userpool_id";
+    private String scope = "openid profile email phone address roles userpool_id";
     private String responseType = "code";
 
     // can be either authorization_code or refresh_token

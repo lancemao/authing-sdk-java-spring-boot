@@ -3,6 +3,7 @@ package cn.authing;
 import com.alibaba.fastjson.JSON;
 
 import java.io.Serializable;
+import java.util.List;
 
 public class UserInfo implements Serializable {
     private static final long serialVersionUID = -5986447815199326409L;
@@ -67,8 +68,11 @@ public class UserInfo implements Serializable {
     private Address address;
     private String phone_number;
     private boolean phone_number_verified;
+    private List<String> roles;
 
     private String accessToken;
+    private String idToken;
+    private String refreshToken;
 
     public String getId() {
         return id == null ? getSub() : id;
@@ -238,12 +242,28 @@ public class UserInfo implements Serializable {
         this.phone_number_verified = phone_number_verified;
     }
 
+    public List<String> getRoles() {
+        return roles;
+    }
+
+    public void setRoles(List<String> roles) {
+        this.roles = roles;
+    }
+
     public String getAccessToken() {
         return accessToken;
     }
 
     public void setAccessToken(String accessToken) {
         this.accessToken = accessToken;
+    }
+
+    public String getIdToken() {
+        return idToken;
+    }
+
+    public void setIdToken(String idToken) {
+        this.idToken = idToken;
     }
 
     @Override
